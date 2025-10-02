@@ -1,0 +1,41 @@
+# package: docker-compose
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${DB_NAME:-pybank}
+      POSTGRES_USER: ${DB_USER:-pybank_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-yourpassword}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-pybank_user} -d ${DB_NAME:-pybank}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  web:
+    build: .
+    command: ["/usr/local/bin/wait-for-db", "db", "sh", "-c", "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"]
+    environment:
+      DJANGO_DEBUG: "True"
+      DJANGO_SECRET_KEY: "change-me"
+      DB_NAME: ${DB_NAME:-pybank}
+      DB_USER: ${DB_USER:-pybank_user}
+      DB_PASSWORD: ${DB_PASSWORD:-yourpassword}
+      DB_HOST: db
+      DB_PORT: "5432"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - .:/app
+
+volumes:
+  pgdata:
