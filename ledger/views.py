@@ -1,7 +1,11 @@
 # package: ledger.views
+from configparser import ParsingError
+from datetime import datetime
+
 from django.db import transaction as db_tx
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
+from django.utils.dateparse import parse_datetime
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -28,10 +32,54 @@ class AccountViewSet(viewsets.ModelViewSet):
         return Response(data={"code": account.code, "balance": total}, status=200)
 
 
+class ReportViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Posting.objects.none()
+    serializer_class = None
+
+    @action(detail=False, methods=["get"])
+    def trial_balance(self, request):
+        as_of_raw = request.query_params.get("as_of")
+        currency = request.query_params.get("currency")
+
+        query = Posting.objects.all()
+
+        if as_of_raw:
+            as_of_dt = parse_datetime(as_of_raw)
+            if not as_of_dt:
+                return Response(
+                    {"error": "Invalid as_of format, use ISO 8601"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            query = query.filter(transaction__created_at__lte=as_of_dt)
+
+        if currency:
+            query = query.filter(transaction__currency=currency.upper())
+
+        rows = (
+            query.values("account__code", "account__name", "account__type")
+              .annotate(balance=Sum("amount"))
+              .order_by("account__code")
+        )
+
+        total = sum(r["balance"] or 0 for r in rows)
+
+        data = {
+            "as_of": as_of_raw,
+            "currency": currency,
+            "rows": [
+                {
+                    "code": r["account__code"],
+                    "name": r["account__name"],
+                    "type": r["account__type"],
+                    "balance": r["balance"] or 0,
+                }
+                for r in rows
+            ],
+            "total": total,
+        }
+        return Response(data, status=200)
+
 class TransactionViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    Read transactions and initiate a new one via a custom action.
-    """
     queryset = Transaction.objects.all().order_by("-created_at")
     serializer_class = TransactionSerializer
 
@@ -42,17 +90,14 @@ class TransactionViewSet(viewsets.ReadOnlyModelViewSet):
         payload.is_valid(raise_exception=True)
         data = payload.validated_data
 
-        # idempotency: if key already exists, return existing tx
         existing = Transaction.objects.filter(idempotency_key=data["idempotency_key"]).first()
         if existing:
             ser = TransactionSerializer(existing)
             return Response(ser.data, status=status.HTTP_200_OK)
 
-        # resolve accounts
         debit_acc = get_object_or_404(Account, code=data["debit_account"])
         credit_acc = get_object_or_404(Account, code=data["credit_account"])
 
-        # atomic write of parent + postings
         with db_tx.atomic():
             tx = Transaction.objects.create(
                 external_id=data["external_id"],
