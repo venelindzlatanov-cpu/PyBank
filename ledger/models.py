@@ -37,5 +37,5 @@ class Posting(models.Model):
     class Meta:
         indexes = [models.Index(fields=["account", "created_at"])]
         constraints = [
-            models.CheckConstraint(check=~models.Q(amount=0), name="posting_amount_nonzero"),
+            models.CheckConstraint(condition=~models.Q(amount=0), name="posting_amount_nonzero"),
         ]

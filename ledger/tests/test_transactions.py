@@ -4,8 +4,8 @@ from ledger.models import Account, Transaction, Posting
 
 @pytest.mark.django_db
 def test_initiate_transaction_creates_balanced_postings(api):
-    cash = Account.objects.create(code="1001", name="Cash", type="ASSET")
-    payable = Account.objects.create(code="2001", name="Payable", type="LIAB")
+    Account.objects.create(code="1001", name="Cash", type="ASSET")
+    Account.objects.create(code="2001", name="Payable", type="LIAB")
 
     url = reverse("transaction-initiate")
     payload = {
