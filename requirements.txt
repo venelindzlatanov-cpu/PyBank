@@ -7,3 +7,4 @@ pytest-django>=4.8
 ruff>=0.5
 mypy>=1.10
 bandit>=1.7
+debugpy>=1.8
